@@ -131,6 +131,7 @@ def main():
     bot = telegram.Bot(token=TELEGRAM_TOKEN)
     timestamp = int(time.time())
     previous_update = ''
+    previous_message = ''
 
     while True:
         try:
@@ -145,7 +146,9 @@ def main():
         except Exception as error:
             logging.error(error, exc_info=True)
             message = f'Сбой в работе программы: {error}'
-            send_message(bot, message)
+            if message != previous_message:
+                send_message(bot, message)
+                previous_message = message
         finally:
             time.sleep(RETRY_PERIOD)
 
