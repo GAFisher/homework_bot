@@ -93,7 +93,7 @@ def get_api_answer(timestamp):
             f'Сбой при запросе к API сервису Практикум.Домашка {error}.'
         )
         raise EndpointRequestException(
-            f'Сбой при запросе к API сервису Практикум.Домашка.'
+            'Сбой при запросе к API сервису Практикум.Домашка.'
         ) from error
 
 
