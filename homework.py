@@ -6,11 +6,13 @@ from http import HTTPStatus
 
 import requests
 import telegram
+from telegram.error import TelegramError
+from requests.exceptions import RequestException
 from dotenv import load_dotenv
 
 from exceptions import (
     NegativeValueException,
-    EndpointHTTPException,
+    EndpointRequestException,
     InvalidTaskStatusException,
 )
 
@@ -51,8 +53,7 @@ def check_tokens():
     for token, value in tokens.items():
         if value is None:
             logger.critical(
-                f'Отсутствует обязательная переменная окружения: {token}. '
-                f'Программа принудительно остановлена.'
+                f'Отсутствует обязательная переменная окружения: {token}.'
             )
             return False
     return True
@@ -63,7 +64,7 @@ def send_message(bot, message):
     try:
         bot.send_message(TELEGRAM_CHAT_ID, message)
         logging.debug(f'Бот отправил сообщение в Telegram: {message}')
-    except Exception as error:
+    except TelegramError as error:
         logging.error(
             f'Сбой при отправке сообщения в Telegram: {error}',
             exc_info=True,
@@ -71,7 +72,7 @@ def send_message(bot, message):
 
 
 def get_api_answer(timestamp):
-    """Функция запроса к эндпоинту API-сервиса Практикум.Домашка."""
+    """Функция запроса к эндпоинту API сервиса Практикум.Домашка."""
     payload = {'from_date': timestamp}
     try:
         homework_statuses = requests.get(
@@ -82,44 +83,58 @@ def get_api_answer(timestamp):
                 f'Эндпоинт {ENDPOINT} недоступен. '
                 f'Код ответа API: {homework_statuses.status_code}'
             )
-            raise EndpointHTTPException(
+            raise ConnectionError(
                 f'Эндпоинт {ENDPOINT} недоступен. '
                 f'Код ответа API: {homework_statuses.status_code}'
             )
         return homework_statuses.json()
-    except requests.exceptions.RequestException:
-        logging.error('Сбой при запросе к эндпоинту!')
+    except RequestException as error:
+        logging.error(
+            f'Сбой при запросе к API сервису Практикум.Домашка {error}.'
+        )
+        raise EndpointRequestException(
+            f'Сбой при запросе к API сервису Практикум.Домашка.'
+        ) from error
 
 
 def check_response(response):
     """Функция проверяет ответ API на соответствие документации."""
-    if not isinstance(response, dict):
-        raise TypeError('Вернулся не словарь!')
-    if 'homeworks' not in response:
-        logging.error('Ответ от API не содержит ключ homeworks')
-        raise KeyError('Ответ от API не содержит ключ homeworks')
-    if 'current_date' not in response:
-        logging.error('Ответ от API не содержит ключ current_date')
-        raise KeyError('Ответ от API не содержит ключ current_date')
-    homework = response.get('homeworks')
-    if not isinstance(homework, list) or not homework:
-        raise TypeError('Вернулся не список!')
-    return homework
+    if isinstance(response, dict):
+        if 'homeworks' not in response or 'current_date' not in response:
+            logging.error('Ответ от API не содержит обязательный ключ.')
+            raise KeyError('Ответ от API не содержит обязательный ключ.')
+        if not isinstance(response['homeworks'], list):
+            logging.error(
+                'В ответе API под ключом homeworks вернулся не список.'
+            )
+            raise TypeError(
+                'В ответе API под ключом homeworks вернулся не список.'
+            )
+        if not response['homeworks']:
+            logging.error('Список работ пуст.')
+            raise TypeError('Список работ пуст.')
+        return response['homeworks']
+    else:
+        logging.error('В ответе API вернулся не словарь.')
+        raise TypeError('В ответе API вернулся не словарь.')
 
 
 def parse_status(homework):
     """Функция извлекает статус домашней работы."""
     homework_name = homework.get('homework_name')
-    if homework_name is None:
-        raise KeyError('Ответ от API не содержит ключ homework_name!')
     status = homework.get('status')
+    if homework_name is None:
+        logging.error('Ответ от API не содержит ключ homework_name.')
+        raise KeyError('Ответ от API не содержит ключ homework_name.')
     if status is None:
-        raise KeyError('Ответ от API не содержит ключ status!')
-    verdict = HOMEWORK_VERDICTS.get(status)
-    if verdict is None:
-        logging.error('Получен неожиданный статус работы!')
-        raise InvalidTaskStatusException('Получен неожиданный статус работы!')
-    return f'Изменился статус проверки работы "{homework_name}". {verdict}'
+        logging.error('Ответ от API не содержит ключ status.')
+        raise KeyError('Ответ от API не содержит ключ status.')
+    if status in HOMEWORK_VERDICTS:
+        verdict = HOMEWORK_VERDICTS.get(status)
+        return f'Изменился статус проверки работы "{homework_name}". {verdict}'
+    else:
+        logging.error('Получен неожиданный статус работы.')
+        raise InvalidTaskStatusException('Получен неожиданный статус работы.')
 
 
 def main():
