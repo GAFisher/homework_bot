@@ -50,12 +50,16 @@ def check_tokens():
         'TELEGRAM_TOKEN': TELEGRAM_TOKEN,
         'TELEGRAM_CHAT_ID': TELEGRAM_CHAT_ID,
     }
+    empty_tokens = []
     for token, value in tokens.items():
         if value is None:
-            logger.critical(
-                f'Отсутствует обязательная переменная окружения: {token}.'
-            )
-            return False
+            empty_tokens.append(token)
+    empty_tokens = ', '.join(empty_tokens)
+    if len(empty_tokens) >= 1:
+        logging.critical(
+            f'Отсутствует обязательная переменная окружения {empty_tokens}'
+        )
+        return False
     return True
 
 
@@ -78,16 +82,6 @@ def get_api_answer(timestamp):
         homework_statuses = requests.get(
             url=ENDPOINT, headers=HEADERS, params=payload
         )
-        if homework_statuses.status_code != HTTPStatus.OK:
-            logging.error(
-                f'Эндпоинт {ENDPOINT} недоступен. '
-                f'Код ответа API: {homework_statuses.status_code}'
-            )
-            raise ConnectionError(
-                f'Эндпоинт {ENDPOINT} недоступен. '
-                f'Код ответа API: {homework_statuses.status_code}'
-            )
-        return homework_statuses.json()
     except RequestException as error:
         logging.error(
             f'Сбой при запросе к API сервису Практикум.Домашка {error}.'
@@ -95,28 +89,26 @@ def get_api_answer(timestamp):
         raise EndpointRequestException(
             'Сбой при запросе к API сервису Практикум.Домашка.'
         ) from error
-
+    if homework_statuses.status_code != HTTPStatus.OK:
+        raise ConnectionError(
+            f'Эндпоинт {ENDPOINT} недоступен. '
+            f'Код ответа API: {homework_statuses.status_code}'
+        )
+    return homework_statuses.json()
 
 def check_response(response):
     """Функция проверяет ответ API на соответствие документации."""
-    if isinstance(response, dict):
-        if 'homeworks' not in response or 'current_date' not in response:
-            logging.error('Ответ от API не содержит обязательный ключ.')
-            raise KeyError('Ответ от API не содержит обязательный ключ.')
-        if not isinstance(response['homeworks'], list):
-            logging.error(
-                'В ответе API под ключом homeworks вернулся не список.'
-            )
-            raise TypeError(
-                'В ответе API под ключом homeworks вернулся не список.'
-            )
-        if not response['homeworks']:
-            logging.error('Список работ пуст.')
-            raise TypeError('Список работ пуст.')
-        return response['homeworks']
-    else:
-        logging.error('В ответе API вернулся не словарь.')
+    if not isinstance(response, dict):
         raise TypeError('В ответе API вернулся не словарь.')
+    if 'homeworks' not in response or 'current_date' not in response:
+        raise KeyError('Ответ от API не содержит обязательный ключ.')
+    if not isinstance(response['homeworks'], list):
+        raise TypeError(
+            'В ответе API под ключом homeworks вернулся не список.'
+        )
+    if not response['homeworks']:
+        raise TypeError('Список работ пуст.')
+    return response['homeworks']
 
 
 def parse_status(homework):
@@ -159,7 +151,7 @@ def main():
             else:
                 logging.debug('Статус работы не изменился.')
         except Exception as error:
-            logging.error(error, exc_info=True)
+            logging.exception(f'Сбой в работе программы: {error}')
             message = f'Сбой в работе программы: {error}'
             if message != previous_message:
                 send_message(bot, message)
