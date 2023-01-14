@@ -96,6 +96,7 @@ def get_api_answer(timestamp):
         )
     return homework_statuses.json()
 
+
 def check_response(response):
     """Функция проверяет ответ API на соответствие документации."""
     if not isinstance(response, dict):
